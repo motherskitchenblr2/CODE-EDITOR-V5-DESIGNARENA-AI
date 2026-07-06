@@ -55,7 +55,8 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('dev_user');
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);   const fixAllBtnRef = useRef<HTMLButtonElement>(null);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const fixAllBtnRef = useRef<HTMLButtonElement>(null);
   const [scanProgress, setScanProgress] = useState<number>(0);
 
   // Load sessions from localStorage
@@ -74,7 +75,7 @@ const App: React.FC = () => {
 
   // Auto-detect language
   const detectLanguage = (codeStr: string): string => {
-    if (codeStr.includes('def ') || codeStr.includes('import ') && codeStr.includes(':')) return 'python';
+    if ((codeStr.includes('def ') || codeStr.includes('import ')) && codeStr.includes(':')) return 'python';
     if (codeStr.includes('function ') || codeStr.includes('const ') || codeStr.includes('=>')) return 'javascript';
     if (codeStr.includes('#include') || codeStr.includes('int main')) return 'cpp';
     if (codeStr.includes('<html') || codeStr.includes('</div>')) return 'html';
@@ -144,7 +145,17 @@ const App: React.FC = () => {
         currentFixed = currentFixed.replace(/ == /g, ' === ');
       }
       // Rule 3: Add const/let optimization suggestion
-      if (code.includes('let ') && !code.includes('const ')) {
+      const letDeclarations = [...currentFixed.matchAll(/\blet\s+([A-Za-z_$][\w$]*)\b/g)];
+      const hasNonReassignedLet = letDeclarations.some((match) => {
+        const varName = match[1];
+        const reassignmentRegex = new RegExp(
+          `\\b${varName}\\b\\s*(=|\\+=|-=|\\*=|/=|%=)|(?:\\+\\+|--)\\s*\\b${varName}\\b|\\b${varName}\\b\\s*(?:\\+\\+|--)`,
+          'm'
+        );
+        return !reassignmentRegex.test(currentFixed);
+      });
+
+      if (hasNonReassignedLet) {
         detectedIssues.push({
           id: 3,
           type: 'Performance',
@@ -182,7 +193,7 @@ const App: React.FC = () => {
         description: 'Potential logic improvement detected',
         explanation: 'Consider adding input validation for edge cases.',
         original: 'for (let i = 0; i < arr.length; i++)',
-        fixed: 'for (let i = 0; i < arr.length; i++) { if (arr[i] != null)'
+        fixed: 'for (let i = 0; i < arr.length; i++) { if (arr[i] !== null)'
       });
     }
 
@@ -212,7 +223,7 @@ const App: React.FC = () => {
     if (!fixedCode) return;
 
     // Pulse animation trigger
-    const btn = document.getElementById('fix-all-btn');
+    const btn = fixAllBtnRef.current;
     if (btn) {
       btn.classList.add('animate-pulse');
       setTimeout(() => btn.classList.remove('animate-pulse'), 800);
@@ -307,7 +318,7 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           {!isLoggedIn ? (
             <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-2 px-5 py-1.5 rounded bg-[#FF5F00] hover:bg-[#FF5F00]/90 text-black font-semibold transition-all activ[...]
-              <User className="w-4 h-4" /> LOGIN TO SAVE
+                          <User className="w-4 h-4" /> LOGIN TO SAVE
             </button>
           ) : (
             <div className="flex items-center gap-2 text-sm px-4 py-1 rounded border border-[#FF5F00]/40 text-[#FF5F00]">
