@@ -2,9 +2,10 @@
 // Volt Code AGI - Main App Component
 // ============================================================================
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Analytics } from '@vercel/analytics/react';
 import { SocketProvider } from './contexts/SocketProvider';
 import { AgentTeamPage } from './pages/AgentTeamPage';
 import { AgentOrchestratorPage } from './pages/AgentOrchestratorPage';
@@ -419,6 +420,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
+      <Analytics />
     </SocketProvider>
   );
 }
