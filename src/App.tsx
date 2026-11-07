@@ -49,7 +49,8 @@ const App: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>(() => {
     try {
       const savedSessions = localStorage.getItem('codeSessions');
-      return savedSessions ? JSON.parse(savedSessions) : [];
+      const parsedSessions: unknown = savedSessions ? JSON.parse(savedSessions) : [];
+      return Array.isArray(parsedSessions) ? parsedSessions : [];
     } catch {
       return [];
     }
@@ -59,7 +60,11 @@ const App: React.FC = () => {
 
   // Save sessions to localStorage
   const saveSessions = (newSessions: Session[]) => {
-    localStorage.setItem('codeSessions', JSON.stringify(newSessions));
+    try {
+      localStorage.setItem('codeSessions', JSON.stringify(newSessions));
+    } catch {
+      // Keep in-memory history usable when browser storage is unavailable.
+    }
     setSessions(newSessions);
   };
 
