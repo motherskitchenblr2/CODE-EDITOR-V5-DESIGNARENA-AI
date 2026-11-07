@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(async () => {
   const plugins = [react(), tailwindcss()];
   try {
-    // @ts-ignore — optional dev-only source-tagging plugin
+    // @ts-expect-error — optional dev-only source-tagging plugin
     const m = await import('./.vite-source-tags.js');
     plugins.push(m.sourceTags());
     console.info('[vite] vite-source-tags plugin loaded.');
