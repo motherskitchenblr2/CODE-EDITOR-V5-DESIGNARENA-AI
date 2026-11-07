@@ -3,7 +3,9 @@
   "private": true,
   "version": "5.0.0",
   "type": "module",
-  "workspaces": ["shared"],
+  "workspaces": [
+    "shared"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
@@ -17,6 +19,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "@tailwindcss/vite": "^4.3.2",
+    "@vercel/analytics": "^2.0.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
