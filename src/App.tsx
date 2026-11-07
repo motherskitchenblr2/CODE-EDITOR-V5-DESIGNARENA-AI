@@ -1,533 +1,148 @@
-import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Play, History, Settings, User, Copy, Download, X, AlertTriangle, 
-  Zap, Bug, Code2 
-} from 'lucide-react';
-import 'highlight.js/styles/atom-one-dark.css';
-
-// Types
-interface Session {
-  id: string;
-  timestamp: string;
-  language: string;
-  originalCode: string;
-  fixedCode: string;
-  issues: Issue[];
-  summary: string;
-}
+import { useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  AlertTriangle, BookOpen, Bug, Check, ChevronDown, Code2, Copy, Download,
+  History, Menu, Play, RotateCcw, Settings, Sparkles, User, X, Zap,
+} from 'lucide-react'
 
 interface Issue {
-  id: number;
-  type: string;
-  severity: 'Critical' | 'High' | 'Medium' | 'Low';
-  description: string;
-  explanation: string;
-  original: string;
-  fixed: string;
+  id: number
+  type: string
+  severity: 'Critical' | 'High' | 'Medium' | 'Low'
+  description: string
+  explanation: string
+  original: string
+  fixed: string
+}
+interface Session {
+  id: string
+  timestamp: string
+  language: string
+  originalCode: string
+  fixedCode: string
+  issues: Issue[]
+  summary: string
 }
 
-// Theme Colors
-const CHARCOAL = '#121212';
-const NEON_ORANGE = '#FF5F00';
+type View = 'editor' | 'history' | 'settings'
+const initialCode = `function calculateSum(arr) {
+  let sum = 0;
+  for (let i = 0; i < arr.length; i++) {
+    sum += arr[i];
+  }
+  console.log("Sum is: " + sum);
+  return sum;
+}`
+const languages = [
+  { value: 'auto', label: 'Auto detect' }, { value: 'javascript', label: 'JavaScript' },
+  { value: 'python', label: 'Python' }, { value: 'cpp', label: 'C++' },
+  { value: 'html', label: 'HTML' }, { value: 'css', label: 'CSS' },
+]
 
-const App: React.FC = () => {
-  // State
-  const [currentView, setCurrentView] = useState<'editor' | 'history' | 'settings'>('editor');
-  const [code, setCode] = useState<string>('function calculateSum(arr) {\n  let sum = 0;\n  for (let i = 0; i < arr.length; i++) {\n    sum += arr[i];\n  }\n  console.log("Sum is: " + sum);\n  return sum;\n}');
-  const [language, setLanguage] = useState<string>('javascript');
-  const [detectedLanguage, setDetectedLanguage] = useState<string>('javascript');
-  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-  const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [fixedCode, setFixedCode] = useState<string>('');
-  const [showDiff, setShowDiff] = useState<boolean>(false);
-  const [showReport, setShowReport] = useState<boolean>(false);
-  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [username, setUsername] = useState<string>('dev_user');
+function detectLanguage(value: string) {
+  if ((value.includes('def ') || value.includes('import ')) && value.includes(':')) return 'python'
+  if (value.includes('function ') || value.includes('const ') || value.includes('=>')) return 'javascript'
+  if (value.includes('#include') || value.includes('int main')) return 'cpp'
+  if (value.includes('<html') || value.includes('</div>')) return 'html'
+  if (value.includes('{') && value.includes('}') && value.includes(':')) return 'css'
+  return 'javascript'
+}
+
+export default function App() {
+  const [view, setView] = useState<View>('editor')
+  const [code, setCode] = useState(initialCode)
+  const [language, setLanguage] = useState('javascript')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [issues, setIssues] = useState<Issue[]>([])
+  const [fixedCode, setFixedCode] = useState('')
+  const [showDiff, setShowDiff] = useState(false)
+  const [showReport, setShowReport] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [loggedIn, setLoggedIn] = useState(false)
   const [sessions, setSessions] = useState<Session[]>(() => {
     try {
-      const savedSessions = localStorage.getItem('codeSessions');
-      const parsedSessions: unknown = savedSessions ? JSON.parse(savedSessions) : [];
-      return Array.isArray(parsedSessions) ? parsedSessions : [];
-    } catch {
-      return [];
+      const value: unknown = JSON.parse(localStorage.getItem('codeSessions') || '[]')
+      return Array.isArray(value) ? value : []
+    } catch { return [] }
+  })
+  const fixButton = useRef<HTMLButtonElement>(null)
+  const detected = useMemo(() => detectLanguage(code), [code])
+  const activeLanguage = language === 'auto' ? detected : language
+
+  const saveSessions = (next: Session[]) => {
+    try { localStorage.setItem('codeSessions', JSON.stringify(next)) } catch { /* storage is optional */ }
+    setSessions(next)
+  }
+
+  const analyze = async () => {
+    if (!code.trim() || analyzing) return
+    setAnalyzing(true); setShowDiff(false); setProgress(8)
+    const timer = window.setInterval(() => setProgress(value => Math.min(value + 12, 92)), 140)
+    await new Promise(resolve => window.setTimeout(resolve, 1200))
+    window.clearInterval(timer); setProgress(100)
+    const next: Issue[] = []
+    let repaired = code
+    if (activeLanguage === 'javascript' && code.includes('console.log')) {
+      next.push({ id: 1, type: 'Debug statement', severity: 'Medium', description: 'Remove console.log statements for production', explanation: 'Console output can expose sensitive data and create noisy production logs.', original: 'console.log("Sum is: " + sum);', fixed: '// Debug log removed for production' })
+      repaired = repaired.replace(/console\.log\([^)]+\);?/g, '// Debug log removed for production')
     }
-  });
-  const fixAllBtnRef = useRef<HTMLButtonElement>(null);
-  const [scanProgress, setScanProgress] = useState<number>(0);
-
-  // Save sessions to localStorage
-  const saveSessions = (newSessions: Session[]) => {
-    try {
-      localStorage.setItem('codeSessions', JSON.stringify(newSessions));
-    } catch {
-      // Keep in-memory history usable when browser storage is unavailable.
+    if (code.includes(' == ')) {
+      next.push({ id: 2, type: 'Type safety', severity: 'High', description: 'Use strict equality instead of loose equality', explanation: 'Strict equality prevents unexpected type coercion bugs.', original: 'x == y', fixed: 'x === y' })
+      repaired = repaired.replace(/ == /g, ' === ')
     }
-    setSessions(newSessions);
-  };
-
-  // Auto-detect language
-  const detectLanguage = (codeStr: string): string => {
-    if ((codeStr.includes('def ') || codeStr.includes('import ')) && codeStr.includes(':')) return 'python';
-    if (codeStr.includes('function ') || codeStr.includes('const ') || codeStr.includes('=>')) return 'javascript';
-    if (codeStr.includes('#include') || codeStr.includes('int main')) return 'cpp';
-    if (codeStr.includes('<html') || codeStr.includes('</div>')) return 'html';
-    if (codeStr.includes('{') && codeStr.includes('}') && codeStr.includes(':')) return 'css';
-    return 'javascript';
-  };
-
-  // Handle code change with auto language detection
-  const handleCodeChange = (newCode: string) => {
-    setCode(newCode);
-    const detected = detectLanguage(newCode);
-    setDetectedLanguage(detected);
-    if (language === 'auto') {
-      setLanguage(detected);
+    if (/\blet\s+\w+\s*=/.test(repaired) && !next.some(issue => issue.type === 'Performance')) {
+      next.push({ id: 3, type: 'Performance', severity: 'Low', description: 'Review variables that can be const', explanation: 'Const communicates intent and prevents accidental reassignment.', original: 'let sum = 0;', fixed: 'const sum = 0;' })
     }
-  };
+    if (!next.length) next.push({ id: 1, type: 'Optimization', severity: 'Low', description: 'Add input validation for edge cases', explanation: 'Guarding inputs makes the function safer for real-world data.', original: code.split('\n')[0], fixed: `// Consider validating inputs\n${code.split('\n')[0]}` })
+    setIssues(next); setFixedCode(repaired === code ? `// AI optimized\n${code}` : repaired); setAnalyzing(false); setShowDiff(true)
+  }
 
-  // Simulated AI Analysis - Fully Functioning Rule-based Engine
-  const analyzeCode = async () => {
-    setIsAnalyzing(true);
-    setIsScanning(true);
-    setScanProgress(0);
+  const applyFixes = () => {
+    if (!fixedCode) return
+    fixButton.current?.classList.add('animate-pulse')
+    window.setTimeout(() => fixButton.current?.classList.remove('animate-pulse'), 700)
+    const session: Session = { id: Date.now().toString(36), timestamp: new Date().toISOString(), language: activeLanguage, originalCode: code, fixedCode, issues, summary: `${issues.length} issue${issues.length === 1 ? '' : 's'} fixed and saved to your workspace.` }
+    setCode(fixedCode); setShowDiff(false); saveSessions([session, ...sessions].slice(0, 12)); setShowReport(true)
+  }
 
-    // Scanning animation simulation
-    const scanInterval = setInterval(() => {
-      setScanProgress(prev => {
-        const next = prev + Math.random() * 18 + 8;
-        return Math.min(next, 100);
-      });
-    }, 120);
+  const copy = async (text: string) => {
+    await navigator.clipboard?.writeText(text)
+  }
+  const download = (text: string) => {
+    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); link.download = `volt-${activeLanguage}.txt`; link.click(); URL.revokeObjectURL(link.href)
+  }
+  const loadSession = (session: Session) => { setCode(session.originalCode); setFixedCode(session.fixedCode); setIssues(session.issues); setLanguage(session.language); setView('editor'); setShowReport(true); setMenuOpen(false) }
 
-    await new Promise(resolve => setTimeout(resolve, 1800));
-    clearInterval(scanInterval);
-    setScanProgress(100);
-    setIsScanning(false);
-
-    const lang = language === 'auto' ? detectedLanguage : language;
-    const detectedIssues: Issue[] = [];
-    let currentFixed = code;
-
-    // JS/TS Analysis Rules
-    if (lang === 'javascript') {
-      // Rule 1: console.log removal
-      if (code.includes('console.log')) {
-        detectedIssues.push({
-          id: 1,
-          type: 'Debug Statement',
-          severity: 'Medium',
-          description: 'Remove console.log statements for production',
-          explanation: 'Console logs can expose sensitive data and slow down performance in production.',
-          original: 'console.log("Sum is: " + sum);',
-          fixed: '// Debug log removed for production'
-        });
-        currentFixed = currentFixed.replace(/console\.log\([^)]+\);?/g, '// Debug log removed for production');
-      }
-      // Rule 2: Missing strict equality
-      if (code.includes(' == ')) {
-        detectedIssues.push({
-          id: 2,
-          type: 'Type Safety',
-          severity: 'High',
-          description: 'Use strict equality (===) instead of loose (==)',
-          explanation: 'Loose equality can cause unexpected type coercion bugs.',
-          original: 'if (x == y)',
-          fixed: 'if (x === y)'
-        });
-        currentFixed = currentFixed.replace(/ == /g, ' === ');
-      }
-      // Rule 3: Add const/let optimization suggestion
-      const letDeclarations = [...currentFixed.matchAll(/\blet\s+([A-Za-z_$][\w$]*)\b/g)];
-      const hasNonReassignedLet = letDeclarations.some((match) => {
-        const varName = match[1];
-        const reassignmentRegex = new RegExp(
-          `\\b${varName}\\b\\s*(=|\\+=|-=|\\*=|/=|%=)|(?:\\+\\+|--)\\s*\\b${varName}\\b|\\b${varName}\\b\\s*(?:\\+\\+|--)`,
-          'm'
-        );
-        return !reassignmentRegex.test(currentFixed);
-      });
-
-      if (hasNonReassignedLet) {
-        detectedIssues.push({
-          id: 3,
-          type: 'Performance',
-          severity: 'Low',
-          description: 'Use const where variables are never reassigned',
-          explanation: 'Const improves readability and enables better JS engine optimizations.',
-          original: 'let sum = 0;',
-          fixed: 'const sum = 0;'
-        });
-      }
-    }
-
-    // Python Analysis Rules
-    if (lang === 'python') {
-      if (code.includes('print(')) {
-        detectedIssues.push({
-          id: 1,
-          type: 'Debug Statement',
-          severity: 'Medium',
-          description: 'Remove print statements',
-          explanation: 'Production code should use proper logging.',
-          original: 'print("...")',
-          fixed: '# print removed'
-        });
-        currentFixed = currentFixed.replace(/print\([^)]+\)/g, '# print removed');
-      }
-    }
-
-    // Universal: Unused variable detection simulation
-    if (code.length > 40 && detectedIssues.length < 3) {
-      detectedIssues.push({
-        id: detectedIssues.length + 1,
-        type: 'Code Quality',
-        severity: 'High',
-        description: 'Potential logic improvement detected',
-        explanation: 'Consider adding input validation for edge cases.',
-        original: 'for (let i = 0; i < arr.length; i++)',
-        fixed: 'for (let i = 0; i < arr.length; i++) { if (arr[i] !== null)'
-      });
-    }
-
-    // Generate fixed code if none generated
-    if (detectedIssues.length === 0) {
-      detectedIssues.push({
-        id: 1,
-        type: 'Optimization',
-        severity: 'Low',
-        description: 'Code looks clean but can be improved',
-        explanation: 'Add JSDoc comments and improve naming for better maintainability.',
-        original: code.split('\n')[0],
-        fixed: '// Optimized version\n' + code.split('\n')[0]
-      });
-      currentFixed = '// AI Optimized:\n' + code;
-    }
-
-    setIssues(detectedIssues);
-    setFixedCode(currentFixed);
-    
-    setIsAnalyzing(false);
-    setShowDiff(true);
-  };
-
-  // Apply ALL fixes at once
-  const applyAllFixes = () => {
-    if (!fixedCode) return;
-
-    // Pulse animation trigger
-    const btn = fixAllBtnRef.current;
-    if (btn) {
-      btn.classList.add('animate-pulse');
-      setTimeout(() => btn.classList.remove('animate-pulse'), 800);
-    }
-
-    setCode(fixedCode);
-    setShowDiff(false);
-    
-    // Generate detailed report and save session
-    const newSession: Session = {
-      id: Date.now().toString(36),
-      timestamp: new Date().toISOString(),
-      language: language === 'auto' ? detectedLanguage : language,
-      originalCode: code,
-      fixedCode: fixedCode,
-      issues: issues,
-      summary: `${issues.length} issues fixed. ${issues.filter(i => i.severity === 'Critical' || i.severity === 'High').length} critical/high severity resolved.`
-    };
-
-    const updatedSessions = [newSession, ...sessions].slice(0, 12);
-    saveSessions(updatedSessions);
-    
-    setShowReport(true);
-  };
-
-  // Copy to clipboard
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    const toast = document.createElement('div');
-    toast.className = 'fixed bottom-4 right-4 bg-[#FF5F00] text-black px-5 py-2 rounded font-bold';
-    toast.textContent = 'COPIED TO CLIPBOARD!';
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 1800);
-  };
-
-  // Download fixed code
-  const downloadCode = (text: string, filename: string) => {
-    const element = document.createElement('a');
-    const file = new Blob([text], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = filename;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
-  // Load session from history
-  const loadSession = (session: Session) => {
-    setCode(session.originalCode);
-    setFixedCode(session.fixedCode);
-    setIssues(session.issues);
-    setLanguage(session.language);
-    setDetectedLanguage(session.language);
-    setCurrentView('editor');
-    setShowReport(true);
-  };
-
-  // Simulated Login
-  const handleLogin = () => {
-    setIsLoggedIn(true);
-    setShowLoginModal(false);
-  };
-
-  // Language options
-  const languages = [
-    { value: 'auto', label: 'Auto Detect' },
-    { value: 'javascript', label: 'JavaScript' },
-    { value: 'python', label: 'Python' },
-    { value: 'cpp', label: 'C++' },
-    { value: 'html', label: 'HTML' },
-    { value: 'hindi', label: 'हिन्दी (Hindi)' },
-  ];
-
+  const nav = (next: View) => { setView(next); setMenuOpen(false) }
   return (
-    <div className="min-h-screen bg-[#121212] text-white font-sans overflow-hidden" style={{ background: CHARCOAL }}>
-      {/* Top Navbar */}
-      <div className="h-16 border-b border-[#FF5F00]/30 flex items-center justify-between px-6 bg-black/40">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded bg-[#FF5F00] flex items-center justify-center">
-              <Code2 className="w-5 h-5 text-black" />
-            </div>
-            <div>
-              <div className="font-bold tracking-[3px] text-xl">VOLT</div>
-              <div className="text-[9px] text-[#FF5F00] -mt-1">CODE AI</div>
-            </div>
-          </div>
-          <div className="ml-4 px-3 py-0.5 text-xs border border-[#FF5F00]/40 rounded">v4.8 NEON</div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {!isLoggedIn ? (
-            <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-2 px-5 py-1.5 rounded bg-[#FF5F00] hover:bg-[#FF5F00]/90 text-black font-semibold transition-all active:scale-95">
-                          <User className="w-4 h-4" /> LOGIN TO SAVE
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 text-sm px-4 py-1 rounded border border-[#FF5F00]/40 text-[#FF5F00]">
-              <User className="w-4 h-4" /> {username}
-            </div>
-          )}
-        </div>
+    <main className="app-shell">
+      <header className="topbar">
+        <button className="brand" onClick={() => nav('editor')} aria-label="Open editor"><span className="brand-mark"><Code2 size={21} /></span><span><strong>VOLT</strong><small>CODE AI</small></span><em>v4.8</em></button>
+        <div className="topbar-actions"><span className="status-dot"><i /> READY</span><button className="icon-button mobile-only" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open menu"><Menu size={21} /></button><button className="login-button" onClick={() => setLoggedIn(!loggedIn)}><User size={16} /> <span>{loggedIn ? 'dev_user' : 'LOG IN'}</span></button></div>
+      </header>
+      <div className="workspace">
+        <aside className={`sidebar ${menuOpen ? 'is-open' : ''}`}>
+          <div className="sidebar-title">WORKSPACE</div>
+          <button className={view === 'editor' ? 'nav-item active' : 'nav-item'} onClick={() => nav('editor')}><Play size={18} /> <span>New analysis</span><kbd>⌘ N</kbd></button>
+          <button className={view === 'history' ? 'nav-item active' : 'nav-item'} onClick={() => nav('history')}><History size={18} /> <span>Session history</span>{sessions.length > 0 && <b>{sessions.length}</b>}</button>
+          <button className={view === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => nav('settings')}><Settings size={18} /> <span>Settings</span></button>
+          <div className="sidebar-footer"><div className="pro-card"><Sparkles size={16} /><div><strong>VOLT PRO</strong><span>Unlock faster analysis</span></div><ChevronDown size={14} /></div><p>LOCAL-FIRST WORKSPACE<br /><span>Changes stay in your browser</span></p></div>
+        </aside>
+        <section className="content">
+          {view === 'editor' && <>
+            <div className="page-head"><div><div className="eyebrow">MULTI-LANGUAGE EDITOR</div><h1>AI bug finder <span>&amp;</span> optimizer</h1><p>Paste code, scan for issues, and apply practical fixes in one pass.</p></div><div className="head-controls"><label className="select-wrap"><span>Language</span><select value={language} onChange={event => setLanguage(event.target.value)}>{languages.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><ChevronDown size={15} /></label><div className="detected">DETECTED <strong>{detected.toUpperCase()}</strong></div></div></div>
+            <div className="editor-card"><div className="editor-toolbar"><div className="window-dots"><i /><i /><i /></div><span>untitled.{activeLanguage === 'javascript' ? 'js' : activeLanguage}</span><div className="toolbar-actions"><button onClick={() => setCode('')} aria-label="Clear editor"><RotateCcw size={15} /></button><button onClick={() => copy(code)} aria-label="Copy source"><Copy size={15} /></button><button onClick={() => download(code)} aria-label="Download source"><Download size={15} /></button></div></div><div className="editor-body"><div className="line-numbers">{code.split('\n').map((_, index) => <span key={index}>{String(index + 1).padStart(2, '0')}</span>)}</div><textarea aria-label="Source code editor" value={code} onChange={event => setCode(event.target.value)} spellCheck={false} placeholder="Paste your code here..." />{analyzing && <div className="scan-line" style={{ top: `${progress}%` }} />}</div><div className="editor-foot"><span><i className="live-dot" /> {analyzing ? `SCANNING ${Math.round(progress)}%` : 'READY TO ANALYZE'}</span><span>{code.length} chars · {code.split('\n').length} lines</span></div></div>
+            <div className="action-row"><button className="secondary-action" onClick={analyze} disabled={analyzing || !code.trim()}><Bug size={18} /> {analyzing ? 'ANALYZING...' : 'RUN AI ANALYSIS'}</button>{fixedCode && <button ref={fixButton} className="primary-action" onClick={applyFixes}><Zap size={18} /> APPLY ALL FIXES <b>{issues.length}</b></button>}</div>
+            <div className="feature-strip"><div><Check size={16} /><span><strong>Practical rules</strong><small>Finds common production issues</small></span></div><div><BookOpen size={16} /><span><strong>Clear explanations</strong><small>Understand every suggested fix</small></span></div><div><History size={16} /><span><strong>Saved locally</strong><small>Return to your previous sessions</small></span></div></div>
+          </>}
+          {view === 'history' && <div className="panel-page"><div className="panel-heading"><div><div className="eyebrow">WORKSPACE MEMORY</div><h1>Session history</h1><p>Your recent analyses, ready to reopen.</p></div><button className="primary-action small" onClick={() => nav('editor')}><Play size={16} /> NEW ANALYSIS</button></div>{sessions.length === 0 ? <div className="empty-state"><History size={34} /><strong>No saved sessions yet</strong><span>Run an analysis and apply a fix to create your first session.</span><button className="secondary-action small" onClick={() => nav('editor')}>Open editor</button></div> : <div className="session-grid">{sessions.map(session => <button className="session-card" key={session.id} onClick={() => loadSession(session)}><div className="session-meta"><span>{new Date(session.timestamp).toLocaleDateString()}</span><b>{session.language}</b></div><strong>{session.summary}</strong><small>{session.issues.length} fix{session.issues.length === 1 ? '' : 'es'} applied · Tap to reopen</small></button>)}</div>}</div>}
+          {view === 'settings' && <div className="panel-page narrow"><div className="eyebrow">WORKSPACE PREFERENCES</div><h1>Settings</h1><p className="panel-copy">Tune VOLT for the way you write and review code.</p><div className="settings-list"><div><span><strong>Theme</strong><small>Charcoal + neon orange</small></span><b>LOCKED</b></div><div><span><strong>Language detection</strong><small>Automatically recognizes common syntax</small></span><button className="toggle on" aria-label="Language detection enabled"><i /></button></div><div><span><strong>Session storage</strong><small>Saved to this browser only</small></span><b>LOCAL</b></div></div></div>}
+        </section>
       </div>
-
-      <div className="flex h-[calc(100vh-4rem)]">
-        {/* Neon Sidebar */}
-        <div className="w-64 border-r border-[#FF5F00]/20 bg-black/50 flex flex-col">
-          <div className="p-5">
-            <div onClick={() => setCurrentView('editor')} className={`flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer mb-1 transition-all ${currentView === 'editor' ? 'bg-[#FF5F00] text-black' : 'hover:bg-white/5'}`}>
-              <Play className="w-5 h-5" /> NEW ANALYSIS
-            </div>
-            <div onClick={() => setCurrentView('history')} className={`flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer mb-1 transition-all ${currentView === 'history' ? 'bg-[#FF5F00] text-black' : 'hover:bg-white/5'}`}>
-              <History className="w-5 h-5" /> SESSION HISTORY
-            </div>
-            <div onClick={() => setCurrentView('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all ${currentView === 'settings' ? 'bg-[#FF5F00] text-black' : 'hover:bg-white/5'}`}>
-              <Settings className="w-5 h-5" /> SETTINGS
-            </div>
-          </div>
-
-          <div className="mt-auto p-5 border-t border-[#FF5F00]/20 text-xs text-[#FF5F00]/70">
-            HIGH-VOLTAGE DARK MODE<br />NEON ORANGE #FF5F00
-          </div>
-        </div>
-
-        {/* MAIN CONTENT AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {currentView === 'editor' && (
-            <>
-              {/* Editor Header */}
-              <div className="px-8 py-5 border-b border-[#FF5F00]/20 flex items-center justify-between">
-                <div>
-                  <div className="text-[#FF5F00] text-sm tracking-[2px] font-semibold">MULTI-LANGUAGE EDITOR</div>
-                  <div className="text-2xl font-bold tracking-tight">AI Bug Finder &amp; Optimizer</div>
-                </div>
-                
-                <div className="flex items-center gap-4">
-                  <select value={language} onChange={(e) => setLanguage(e.target.value)} className="bg-black border border-[#FF5F00]/60 px-4 py-2 text-sm rounded focus:outline-none focus:border-[#FF5F00]">
-                    {languages.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                  </select>
-                  <div className="text-xs px-3 py-1.5 rounded bg-black border border-[#FF5F00]/40 text-[#FF5F00]">DETECTED: {detectedLanguage.toUpperCase()}</div>
-                </div>
-              </div>
-
-              {/* Code Editor */}
-              <div className="flex-1 p-8 relative">
-                <div className="relative h-full rounded-2xl border border-[#FF5F00]/30 bg-[#0a0a0a] overflow-hidden shadow-2xl" style={{ boxShadow: '0 0 0 1px #FF5F00, 0 25px 60px -15px rgba(0,0,0,0.45)' }}>
-                  {/* Scanning Laser */}
-                  <AnimatePresence>
-                    {isScanning && (
-                      <div className="absolute left-0 right-0 z-50 pointer-events-none" style={{ top: `${scanProgress * 0.94}%`, transition: 'top 120ms linear' }}>
-                        <div className="h-[3px] w-full bg-[#FF5F00]" style={{ boxShadow: `0 0 22px ${NEON_ORANGE}, 0 0 50px ${NEON_ORANGE}` }} />
-                      </div>
-                    )}
-                  </AnimatePresence>
-
-                  <textarea
-                    value={code}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    spellCheck={false}
-                    className="w-full h-full resize-none bg-transparent p-8 font-mono text-[15px] leading-[1.65] outline-none text-[#EDEDED] caret-[#FF5F00]"
-                    style={{ 
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                      boxShadow: 'inset 0 0 0 1px rgba(255,95,0,0.1)'
-                    }}
-                  />
-                </div>
-
-                {/* Action Buttons */}
-                <div className="absolute bottom-9 right-9 flex gap-3">
-                  <motion.button 
-                    whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.985 }}
-                    onClick={analyzeCode} disabled={isAnalyzing}
-                    className="flex items-center gap-3 px-8 py-3.5 rounded-xl bg-black border-2 border-[#FF5F00] text-[#FF5F00] font-semibold disabled:opacity-60 active:bg-[#FF5F00] active:text-black"
-                  >
-                    <Bug className="w-5 h-5" /> {isAnalyzing ? 'ANALYZING...' : 'RUN AI ANALYSIS'}
-                  </motion.button>
-
-                  {fixedCode && (
-                    <motion.button 
-                      ref={fixAllBtnRef}
-                      whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.985 }}
-                      onClick={applyAllFixes}
-                      className="flex items-center gap-3 px-9 py-3.5 rounded-xl bg-[#FF5F00] hover:bg-[#FF5F00]/90 text-black font-extrabold shadow-[0_0_25px_rgba(255,95,0,0.5)] active:scale-95"
-                    >
-                      <Zap className="w-5 h-5" /> FIX ALL ({issues.length})
-                    </motion.button>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* HISTORY VIEW */}
-          {currentView === 'history' && (
-            <div className="p-8">
-              <div className="text-3xl font-bold tracking-tight mb-8">PREVIOUS SESSIONS</div>
-              {sessions.length === 0 ? (
-                <div className="text-center py-24 text-[#FF5F00]/60">No saved sessions yet. Run an analysis to save.</div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {sessions.map((session, idx) => (
-                    <div key={idx} onClick={() => loadSession(session)} className="p-5 border border-[#FF5F00]/20 hover:border-[#FF5F00] rounded-2xl cursor-pointer group bg-black/40 transition-all">
-                      <div className="flex justify-between mb-4">
-                        <div className="font-mono text-sm text-[#FF5F00]">{new Date(session.timestamp).toLocaleDateString()}</div>
-                        <div className="uppercase text-xs tracking-widest px-3 py-px bg-[#FF5F00]/10 text-[#FF5F00] rounded">{session.language}</div>
-                      </div>
-                      <div className="font-semibold line-clamp-2 text-lg mb-3 pr-2">{session.summary}</div>
-                      <div className="text-xs text-[#FF5F00]/60">{session.issues.length} FIXES APPLIED</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* SETTINGS VIEW */}
-          {currentView === 'settings' && (
-            <div className="p-8 max-w-xl">
-              <div className="text-3xl font-bold mb-8">SETTINGS</div>
-              <div className="space-y-6 text-[#FF5F00]/90">
-                <div className="border border-[#FF5F00]/20 rounded p-6">Theme: Charcoal Black + Neon Orange (locked)</div>
-                <div className="border border-[#FF5F00]/20 rounded p-6">Auto Language Detection: ENABLED</div>
-                <div className="border border-[#FF5F00]/20 rounded p-6">Session Storage: LOCAL BROWSER STORAGE</div>
-                <div className="border border-[#FF5F00]/20 rounded p-6">Supported Languages: JavaScript, Python, C++, HTML, CSS, हिन्दी</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* DIFF MODAL with Framer Motion Ghost Effect */}
-      <AnimatePresence>
-        {showDiff && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-6">
-            <motion.div initial={{ opacity: 0, scale: 0.96, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.985, y: 15 }} transition={{ ease: [0.21, 0.92, 0.3, 1] }} className="w-full max-w-6xl max-h-[90vh] overflow-auto bg-[#121212] border border-[#FF5F00] rounded-3xl shadow-2xl">
-              <div className="px-8 py-5 border-b border-[#FF5F00]/30 flex justify-between items-center">
-                <div className="font-bold text-2xl flex items-center gap-3"><AlertTriangle className="text-[#FF5F00]" /> AI ANALYSIS COMPLETE — DIFF PREVIEW</div>
-                <button onClick={() => setShowDiff(false)}><X /></button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-[#FF5F00]/10">
-                {/* ORIGINAL */}
-                <div className="bg-[#0a0a0a] p-8">
-                  <div className="uppercase text-xs tracking-[3px] mb-4 text-red-400">ORIGINAL CODE</div>
-                  <pre className="font-mono text-sm whitespace-pre-wrap text-red-300/70 leading-relaxed">{code}</pre>
-                </div>
-                {/* FIXED with Neon Slide-In */}
-                <motion.div initial={{ x: 60, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="bg-[#0a0a0a] p-8 border-l border-[#FF5F00]/30">
-                  <div className="uppercase text-xs tracking-[3px] mb-4 text-[#FF5F00]">FIXED CODE — NEON OPTIMIZED</div>
-                  <pre className="font-mono text-sm whitespace-pre-wrap text-[#FF5F00] leading-relaxed">{fixedCode}</pre>
-                </motion.div>
-              </div>
-
-              <div className="p-8 flex justify-end gap-4 bg-black/60 border-t border-[#FF5F00]/20">
-                <button onClick={() => setShowDiff(false)} className="px-7 py-3 rounded-xl border border-white/30">CLOSE</button>
-                <button onClick={applyAllFixes} className="px-9 py-3 rounded-xl bg-[#FF5F00] text-black font-bold">APPLY ALL FIXES NOW</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* DETAILED REPORT PANEL */}
-      <AnimatePresence>
-        {showReport && (
-          <div className="fixed inset-0 bg-black/80 z-[80] flex justify-end" onClick={() => setShowReport(false)}>
-            <motion.div initial={{ x: 80 }} animate={{ x: 0 }} exit={{ x: 80 }} onClick={e => e.stopPropagation()} className="w-full max-w-lg bg-[#121212] h-full border-l border-[#FF5F00] overflow-y-auto">
-              <div className="sticky top-0 bg-[#121212] p-8 border-b border-[#FF5F00]/40 flex justify-between">
-                <div><div className="font-bold text-xl">DETAILED FIX REPORT</div><div className="text-[#FF5F00] text-sm">ALL FIXES APPLIED SUCCESSFULLY</div></div>
-                <button onClick={() => setShowReport(false)}><X /></button>
-              </div>
-              
-              <div className="p-8 space-y-7">
-                {issues.map((issue, index) => (
-                  <div key={index} className="border-l-4 border-[#FF5F00] pl-6">
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="font-bold text-lg">{issue.type}</div>
-                      <div className={`px-3 py-px text-xs font-bold rounded ${issue.severity === 'Critical' || issue.severity === 'High' ? 'bg-[#FF5F00] text-black' : 'bg-white/10'}`}>{issue.severity}</div>
-                    </div>
-                    <div className="text-[#FF5F00] mb-3">{issue.description}</div>
-                    <div className="text-sm opacity-75 leading-snug mb-4">{issue.explanation}</div>
-                    <div className="text-[10px] font-mono bg-black p-3 rounded">FIX: {issue.fixed}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-8 flex gap-3 sticky bottom-0 bg-[#121212]">
-                <button onClick={() => copyToClipboard(fixedCode)} className="flex-1 flex justify-center gap-2 items-center py-3 border border-[#FF5F00] hover:bg-white/5 rounded-xl"><Copy className="w-4 h-4" /> COPY FIXED</button>
-                <button onClick={() => downloadCode(fixedCode, `fixed-${Date.now()}.js`)} className="flex-1 flex justify-center gap-2 items-center py-3 bg-[#FF5F00] text-black font-bold rounded-xl"><Download className="w-4 h-4" /> DOWNLOAD</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Login Modal */}
-      <AnimatePresence>
-        {showLoginModal && (
-          <div className="fixed inset-0 bg-black/90 z-[90] flex items-center justify-center">
-            <div className="bg-[#121212] border border-[#FF5F00] w-full max-w-sm p-9 rounded-3xl">
-              <div className="font-bold text-center text-2xl mb-2">SIGN IN</div>
-              <div className="text-center text-sm mb-8 text-[#FF5F00]/60">Save and revisit all your analysis sessions</div>
-              <input value={username} onChange={e => setUsername(e.target.value)} className="w-full bg-black border border-[#FF5F00]/40 py-3 px-4 mb-3 rounded" placeholder="Username" />
-              <button onClick={handleLogin} className="mt-2 w-full py-3.5 bg-[#FF5F00] font-extrabold text-black rounded-xl">SIGN IN &amp; ENABLE HISTORY</button>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-export default App;
+      <nav className="bottom-nav"><button className={view === 'editor' ? 'active' : ''} onClick={() => nav('editor')}><Play size={19} /><span>Analyze</span></button><button className={view === 'history' ? 'active' : ''} onClick={() => nav('history')}><History size={19} /><span>History</span></button><button className={view === 'settings' ? 'active' : ''} onClick={() => nav('settings')}><Settings size={19} /><span>Settings</span></button></nav>
+      <AnimatePresence>{showDiff && <div className="modal-backdrop"><motion.div className="modal diff-modal" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}><div className="modal-header"><div><div className="eyebrow">ANALYSIS COMPLETE</div><h2>Review recommended fixes</h2></div><button className="icon-button" onClick={() => setShowDiff(false)} aria-label="Close"><X size={19} /></button></div><div className="issue-list">{issues.map(issue => <div className="issue" key={issue.id}><span className={`severity ${issue.severity.toLowerCase()}`}>{issue.severity}</span><div><strong>{issue.description}</strong><p>{issue.explanation}</p><div className="code-pair"><code>{issue.original}</code><span>→</span><code>{issue.fixed}</code></div></div></div>)}</div><div className="modal-actions"><button className="secondary-action" onClick={() => setShowDiff(false)}>Keep editing</button><button className="primary-action" onClick={applyFixes}><Zap size={17} /> APPLY ALL FIXES</button></div></motion.div></div>}</AnimatePresence>
+      <AnimatePresence>{showReport && <div className="modal-backdrop"><motion.div className="modal report-modal" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }}><div className="success-icon"><Check size={24} /></div><button className="close-report" onClick={() => setShowReport(false)} aria-label="Close"><X size={18} /></button><div className="eyebrow">WORKSPACE UPDATED</div><h2>Fixes applied successfully</h2><p>{issues.length} improvement{issues.length === 1 ? '' : 's'} applied to your code and saved to session history.</p><div className="report-actions"><button className="secondary-action" onClick={() => { setShowReport(false); nav('history') }}><History size={16} /> VIEW HISTORY</button><button className="primary-action" onClick={() => { setShowReport(false); setShowDiff(true) }}><AlertTriangle size={16} /> REVIEW AGAIN</button></div></motion.div></div>}</AnimatePresence>
+    </main>
+  )
+}
