@@ -150,7 +150,7 @@ export function AgentStatusBadge({
       {showLabel && <span style={{ fontSize: sizeConfig.labelFontSize }}>{config.label}</span>}
       
       {/* CSS Animation */}
-      <style jsx>{`
+      <style>{`
         @keyframes pulse {
           0%, 100% { transform: scale(1); opacity: 0.5; }
           50% { transform: scale(1.2); opacity: 0.8; }

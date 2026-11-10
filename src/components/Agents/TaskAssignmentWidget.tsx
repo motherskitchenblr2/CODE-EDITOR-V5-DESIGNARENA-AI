@@ -280,6 +280,7 @@ export function TaskAssignmentWidget({
                   border: `1px solid ${statusConfig.color}20`,
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
+                  // @ts-ignore
                   ':hover': {
                     background: 'rgba(255, 255, 255, 0.05)',
                     borderColor: statusConfig.color,

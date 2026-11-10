@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { useSocket } from '../contexts/SocketProvider';
-import { AgentState, AgentTask, AgentType, AgentTab, AgentStatus, TaskStatus } from '../../../shared/types';
+import { useSocket } from '../../contexts/SocketProvider';
+import { AgentState, AgentTask, AgentTab, AgentStatus, TaskStatus } from '../../../shared/types';
 import { AgentStatusBadge } from './AgentStatusBadge';
 import { TaskAssignmentWidget } from './TaskAssignmentWidget';
 import { EditorAgentPanel } from './EditorAgentPanel';
@@ -69,22 +69,6 @@ export function AgentOrchestrator({ className = '' }: AgentOrchestratorProps) {
 
     return result;
   }, [allAgents]);
-
-  // Get tasks by tab
-  const tasksByTab = useMemo(() => {
-    const tabs: AgentTab[] = ['editor', 'github', 'dashboard'];
-    const result: Record<AgentTab, AgentTask[]> = {
-      editor: [],
-      github: [],
-      dashboard: [],
-    };
-
-    tabs.forEach((tab) => {
-      result[tab] = allTasks.filter((t) => t.tab === tab);
-    });
-
-    return result;
-  }, [allTasks]);
 
   // Handle agent click
   const handleAgentClick = useCallback((agentId: string) => {

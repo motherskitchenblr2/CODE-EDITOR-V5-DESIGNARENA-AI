@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { useSocket } from '../contexts/SocketProvider';
-import { AgentState, AgentTask, TaskPriority, AgentTab } from '../../../shared/types';
+import { useSocket } from '../../contexts/SocketProvider';
+import { AgentTask, TaskPriority, AgentTab } from '../../../shared/types';
 import { AgentStatusBadge } from './AgentStatusBadge';
 import { TaskAssignmentWidget } from './TaskAssignmentWidget';
 import { AgentMessageBubble } from './AgentMessageBubble';
@@ -86,24 +86,6 @@ export function EditorAgentPanel({ className = '' }: EditorAgentPanelProps) {
     socket.emitAgentMessage(message);
     setNewMessage('');
   }, [newMessage, socket]);
-
-  // Handle create task
-  const handleCreateTask = useCallback(() => {
-    if (!newTaskTitle.trim()) return;
-
-    const task = {
-      title: newTaskTitle,
-      description: newTaskDescription,
-      priority: newTaskPriority,
-      tab: 'editor' as AgentTab,
-      createdBy: 'user',
-    };
-
-    socket.emitAgentTaskCreate(task);
-    setNewTaskTitle('');
-    setNewTaskDescription('');
-    setNewTaskPriority('medium');
-  }, [newTaskTitle, newTaskDescription, newTaskPriority, socket]);
 
   // Handle key down
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

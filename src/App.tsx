@@ -2,7 +2,7 @@
 // Volt Code AGI - Main App Component
 // ============================================================================
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SocketProvider } from './contexts/SocketProvider';

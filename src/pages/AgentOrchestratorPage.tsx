@@ -99,7 +99,7 @@ export function AgentOrchestratorPage() {
           System Online
         </span>
 
-        <style jsx>{`
+        <style>{`
           @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }

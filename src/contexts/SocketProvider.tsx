@@ -8,6 +8,8 @@ import {
   SocketContextValue,
   ServerSocketEvents,
   ClientSocketEvents,
+} from './SocketContext';
+import {
   AgentStatusUpdatePayload,
   AgentMessagePayload,
   TaskAssignmentPayload,
@@ -22,8 +24,7 @@ import {
   AgentTab,
   TaskStatus,
   TaskPriority,
-  AgentConfig,
-} from './SocketContext';
+} from '../../shared/types';
 
 // ==========================================================================
 // Context
